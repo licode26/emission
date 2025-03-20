@@ -39,6 +39,36 @@ st.markdown("""
         padding: 20px;
         border-radius: 5px;
     }
+    .conclusion-box {
+        background-color: #f0f8ff;
+        border-left: 5px solid #0e4d92;
+        padding: 15px;
+        margin: 20px 0;
+    }
+    .alert-high {
+        color: #721c24;
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+    .alert-medium {
+        color: #856404;
+        background-color: #fff3cd;
+        border-color: #ffeeba;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
+    .alert-low {
+        color: #155724;
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+        padding: 10px;
+        border-radius: 5px;
+        margin: 10px 0;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -109,6 +139,73 @@ def update_monitoring_data():
         })
         st.session_state.emission_data = pd.concat([st.session_state.emission_data, new_row], ignore_index=True)
         st.session_state.current_values = new_data
+
+# Function to generate conclusions based on emission data
+def generate_conclusions():
+    df = st.session_state.emission_data
+    
+    if len(df) < 2:
+        return "Insufficient data for analysis. Please collect more data points."
+    
+    conclusions = []
+    
+    # Calculate trends
+    recent_data = df.tail(min(5, len(df)))
+    
+    # CO2 Analysis
+    co2_trend = recent_data['co2_emission'].diff().mean()
+    co2_avg = recent_data['co2_emission'].mean()
+    if co2_avg > 66:
+        conclusions.append(f"<div class='alert-high'>⚠️ Critical CO2 Emission Levels: Average of {co2_avg:.1f}% indicates significantly high carbon output.</div>")
+    elif co2_avg > 33:
+        conclusions.append(f"<div class='alert-medium'>⚠️ Moderate CO2 Emission Levels: Average of {co2_avg:.1f}% requires attention.</div>")
+    else:
+        conclusions.append(f"<div class='alert-low'>✅ CO2 Emission Levels: Average of {co2_avg:.1f}% is within acceptable range.</div>")
+    
+    if co2_trend > 2:
+        conclusions.append(f"CO2 emissions are increasing at an alarming rate of {co2_trend:.1f}% per measurement period.")
+    elif co2_trend > 0:
+        conclusions.append(f"CO2 emissions are gradually increasing at {co2_trend:.1f}% per measurement period.")
+    elif co2_trend < -2:
+        conclusions.append(f"CO2 emissions are decreasing significantly at {-co2_trend:.1f}% per measurement period.")
+    elif co2_trend < 0:
+        conclusions.append(f"CO2 emissions are gradually decreasing at {-co2_trend:.1f}% per measurement period.")
+    
+    # Methane Analysis
+    methane_trend = recent_data['methane_emission'].diff().mean()
+    methane_avg = recent_data['methane_emission'].mean()
+    if methane_avg > 50:
+        conclusions.append(f"<div class='alert-high'>⚠️ High Methane Emissions: Average of {methane_avg:.1f}% indicates significant methane release.</div>")
+    
+    # Energy Intensity Analysis
+    energy_avg = recent_data['energy_intensity'].mean()
+    if energy_avg > 70:
+        conclusions.append(f"<div class='alert-high'>⚠️ High Energy Intensity: Average of {energy_avg:.1f}% indicates inefficient energy usage.</div>")
+    elif energy_avg < 30:
+        conclusions.append(f"<div class='alert-low'>✅ Low Energy Intensity: Average of {energy_avg:.1f}% indicates efficient energy usage.</div>")
+    
+    # Correlation Analysis
+    correlation = df.corr()
+    if abs(correlation.loc['co2_emission', 'energy_intensity']) > 0.7:
+        corr_val = correlation.loc['co2_emission', 'energy_intensity']
+        conclusions.append(f"Strong correlation ({corr_val:.2f}) between CO2 emissions and energy intensity suggests that energy efficiency improvements could significantly reduce carbon emissions.")
+    
+    # Overall Assessment
+    overall_avg = (co2_avg + methane_avg + recent_data['other_ghgs'].mean() + energy_avg) / 4
+    if overall_avg > 60:
+        conclusions.append("<div class='alert-high'>⚠️ Overall Assessment: Emission levels are critically high. Immediate action required.</div>")
+    elif overall_avg > 40:
+        conclusions.append("<div class='alert-medium'>⚠️ Overall Assessment: Emission levels are moderate. Monitoring and reduction strategies recommended.</div>")
+    else:
+        conclusions.append("<div class='alert-low'>✅ Overall Assessment: Emission levels are within acceptable range. Continue monitoring and maintaining current practices.</div>")
+    
+    # Recommendations
+    if co2_avg > 50 or methane_avg > 40:
+        conclusions.append("Recommendation: Implement carbon capture technologies and reduce methane leakage.")
+    if energy_avg > 60:
+        conclusions.append("Recommendation: Conduct energy audit and implement efficiency measures.")
+    
+    return "<br>".join(conclusions)
 
 # Main dashboard layout
 # Display four gauge charts in a row
@@ -199,6 +296,58 @@ if not st.session_state.emission_data.empty and len(st.session_state.emission_da
     
     st.line_chart(chart_data)
 
+    # Conclusions Section
+    st.markdown('<div class="section-header">Emission Analysis & Conclusions</div>', unsafe_allow_html=True)
+    
+    conclusions = generate_conclusions()
+    st.markdown(f'<div class="conclusion-box">{conclusions}</div>', unsafe_allow_html=True)
+    
+    # Add Key Performance Indicators
+    st.markdown("### Key Performance Indicators (KPIs)")
+    
+    kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
+    
+    with kpi_col1:
+        # Calculate emission reduction rate
+        if len(st.session_state.emission_data) > 5:
+            first_5_avg = st.session_state.emission_data.head(5)[['co2_emission', 'methane_emission', 'other_ghgs']].mean().mean()
+            last_5_avg = st.session_state.emission_data.tail(5)[['co2_emission', 'methane_emission', 'other_ghgs']].mean().mean()
+            reduction_rate = ((first_5_avg - last_5_avg) / first_5_avg) * 100
+            
+            st.metric(
+                label="Emission Reduction Rate",
+                value=f"{abs(reduction_rate):.1f}%",
+                delta=f"{reduction_rate:.1f}%" if reduction_rate != 0 else "0%",
+                delta_color="normal" if reduction_rate >= 0 else "inverse"
+            )
+    
+    with kpi_col2:
+        # Calculate carbon intensity
+        if not st.session_state.emission_data.empty:
+            carbon_intensity = st.session_state.emission_data['co2_emission'].mean() / st.session_state.emission_data['energy_intensity'].mean()
+            st.metric(
+                label="Carbon Intensity Ratio",
+                value=f"{carbon_intensity:.2f}"
+            )
+    
+    with kpi_col3:
+        # Calculate compliance status
+        if not st.session_state.emission_data.empty:
+            latest_values = st.session_state.emission_data.iloc[-1]
+            compliance_score = 100 - (latest_values[['co2_emission', 'methane_emission', 'other_ghgs']].mean())
+            
+            status = "Non-Compliant"
+            if compliance_score >= 60:
+                status = "Compliant"
+            elif compliance_score >= 40:
+                status = "Borderline"
+            
+            st.metric(
+                label="Compliance Status",
+                value=status,
+                delta=f"{compliance_score:.1f}%"
+            )
+
 # ML Model Integration (simplified for demo)
 st.markdown('<div class="section-header">Emission Prediction (ML Model)</div>', unsafe_allow_html=True)
 
@@ -253,6 +402,43 @@ if st.button("Generate Prediction"):
         # Display prediction chart
         pred_df_plot = pred_df.set_index('predicted_date')
         st.line_chart(pred_df_plot)
+        
+        # Prediction Conclusions
+        final_values = pred_df.iloc[-1]
+        st.markdown("### Prediction Analysis")
+        
+        if final_values['co2_emission'] > last_values['co2_emission']:
+            st.warning(f"⚠️ CO2 emissions are projected to increase by {final_values['co2_emission'] - last_values['co2_emission']:.1f}% over the next {prediction_horizon} days. Consider implementing additional carbon reduction measures.")
+        else:
+            st.success(f"✅ CO2 emissions are projected to decrease by {last_values['co2_emission'] - final_values['co2_emission']:.1f}% over the next {prediction_horizon} days.")
+            
+        if final_values['methane_emission'] > last_values['methane_emission']:
+            st.warning(f"⚠️ Methane emissions are projected to increase by {final_values['methane_emission'] - last_values['methane_emission']:.1f}% over the next {prediction_horizon} days.")
+        else:
+            st.success(f"✅ Methane emissions are projected to decrease by {last_values['methane_emission'] - final_values['methane_emission']:.1f}% over the next {prediction_horizon} days.")
+            
+        # Calculate overall emission trajectory
+        avg_current = sum([last_values['co2_emission'], last_values['methane_emission'], last_values['other_ghgs']]) / 3
+        avg_future = sum([final_values['co2_emission'], final_values['methane_emission'], final_values['other_ghgs']]) / 3
+        
+        st.markdown(f"### Overall Emission Trajectory")
+        if avg_future > avg_current:
+            st.error(f"⚠️ Overall emissions are projected to increase by {avg_future - avg_current:.1f}% over the next {prediction_horizon} days.")
+            st.markdown("""
+            **Recommended Actions:**
+            1. Review and optimize energy consumption patterns
+            2. Investigate sources of increasing emissions
+            3. Consider implementing carbon capture technologies
+            4. Accelerate transition to renewable energy sources
+            """)
+        else:
+            st.success(f"✅ Overall emissions are projected to decrease by {avg_current - avg_future:.1f}% over the next {prediction_horizon} days.")
+            st.markdown("""
+            **Recommended Actions:**
+            1. Continue current emission reduction strategies
+            2. Document successful practices for scaling
+            3. Consider setting more ambitious reduction targets
+            """)
 
 # Update data if monitoring is active
 if st.session_state.is_monitoring:
